@@ -45,5 +45,9 @@ let package = Package(
             name: "PressureHapticsTrackpadTestRunner",
             dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
         ),
+        .testTarget(
+            name: "PressureHapticsTrackpadTests",
+            dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
+        ),
     ]
 )
