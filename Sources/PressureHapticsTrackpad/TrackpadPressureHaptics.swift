@@ -20,6 +20,7 @@ public final class TrackpadPressureHaptics {
     private var frameProcessor: PressureFrameProcessor
     private var listeningTask: Task<Void, Never>?
     private var repeatingHapticTask: Task<Void, Never>?
+    private var repeatingHapticGeneration: UInt64 = 0
 
     public var onPressureSample: ((Float, Int) -> Void)?
     public var onTouchFrame: (([TrackpadTouchSample]) -> Void)?
@@ -104,14 +105,17 @@ public final class TrackpadPressureHaptics {
 
     public func startHaptic(level: Int) {
         stopHaptic()
+        let generation = repeatingHapticGeneration
         performHapticTrigger(level: level)
 
-        guard rate > 0, (1...profile.levels.count).contains(level) else {
+        guard repeatingHapticGeneration == generation,
+              rate > 0,
+              (1...profile.levels.count).contains(level) else {
             return
         }
 
         let interval = 1 / rate
-        repeatingHapticTask = Task { [weak self] in
+        let task = Task { [weak self] in
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(for: .seconds(interval))
@@ -122,23 +126,38 @@ public final class TrackpadPressureHaptics {
                 guard !Task.isCancelled else {
                     return
                 }
-                self?.performHapticTrigger(level: level)
+                guard let self,
+                      self.repeatingHapticGeneration == generation else {
+                    return
+                }
+                self.performHapticTrigger(level: level)
             }
         }
+        replaceRepeatingHapticTask(with: task)
     }
 
     public func stopHaptic() {
-        repeatingHapticTask?.cancel()
-        repeatingHapticTask = nil
+        repeatingHapticGeneration &+= 1
+        replaceRepeatingHapticTask(with: nil)
     }
 
     private func consume(_ rawTouches: [OMSTouchData]) {
         let touches = rawTouches.map(TrackpadTouchSample.init)
+        consume(
+            touches,
+            timestamp: ProcessInfo.processInfo.systemUptime
+        )
+    }
+
+    func consume(
+        _ touches: [TrackpadTouchSample],
+        timestamp: TimeInterval
+    ) {
         onTouchFrame?(touches)
 
         let result = frameProcessor.consume(
             touches,
-            timestamp: ProcessInfo.processInfo.systemUptime,
+            timestamp: timestamp,
             selectionStrategy: selectionStrategy,
             rate: rate
         )
@@ -160,6 +179,13 @@ public final class TrackpadPressureHaptics {
         let command = profile.levels[level - 1].command
         let succeeded = hapticTrigger(command)
         onHapticTrigger?(.init(level: level, succeeded: succeeded))
+    }
+
+    private func replaceRepeatingHapticTask(
+        with task: Task<Void, Never>?
+    ) {
+        repeatingHapticTask?.cancel()
+        repeatingHapticTask = task
     }
 }
 
