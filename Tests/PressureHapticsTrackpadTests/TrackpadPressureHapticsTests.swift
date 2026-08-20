@@ -68,10 +68,10 @@ final class TrackpadPressureHapticsTests: XCTestCase {
         haptics.rate = 20
 
         haptics.startHaptic(level: 4)
-        try? await Task.sleep(for: .milliseconds(160))
+        let didRepeat = await waitForCommandCount(3, recorder: recorder)
         haptics.stopHaptic()
 
-        XCTAssertGreaterThanOrEqual(recorder.commands.count, 3)
+        XCTAssertTrue(didRepeat)
     }
 
     func testStopHapticPreventsFurtherRepeats() async {
@@ -176,12 +176,36 @@ final class TrackpadPressureHapticsTests: XCTestCase {
         XCTAssertEqual(haptics.rate, 20)
     }
 
+    func testLeastPositiveFiniteRateSaturatesRepeatDelay() {
+        XCTAssertEqual(
+            TrackpadPressureHaptics.repeatDelayNanoseconds(
+                for: Double.leastNonzeroMagnitude
+            ),
+            UInt64.max
+        )
+    }
+
+    func testGreatestPositiveFiniteRateKeepsRepeatDelayNonzero() {
+        XCTAssertEqual(
+            TrackpadPressureHaptics.repeatDelayNanoseconds(
+                for: Double.greatestFiniteMagnitude
+            ),
+            1
+        )
+    }
+
     func testPressureAttemptForwardsSelectionAndNotifiesResult() {
         let recorder = HapticTriggerRecorder()
         let haptics = makeHaptics(recorder: recorder)
         haptics.selectionStrategy = .average
         var results: [HapticTriggerResult] = []
+        var sampledMaximumPressure: Float?
+        var sampledActiveTouchCount: Int?
         haptics.onHapticTrigger = { results.append($0) }
+        haptics.onPressureSample = { maximumPressure, activeTouchCount in
+            sampledMaximumPressure = maximumPressure
+            sampledActiveTouchCount = activeTouchCount
+        }
 
         haptics.consume([
             makeTouch(id: 1, pressure: 200),
@@ -198,6 +222,24 @@ final class TrackpadPressureHapticsTests: XCTestCase {
         ])
         XCTAssertEqual(results.map(\.level), [3])
         XCTAssertEqual(results.map(\.succeeded), [true])
+        XCTAssertEqual(sampledMaximumPressure, 500)
+        XCTAssertEqual(sampledActiveTouchCount, 2)
+    }
+
+    func testPressureAttemptReportsTriggerFailure() {
+        let recorder = HapticTriggerRecorder()
+        recorder.result = false
+        let haptics = makeHaptics(recorder: recorder)
+        var result: HapticTriggerResult?
+        haptics.onHapticTrigger = { result = $0 }
+
+        haptics.consume([
+            makeTouch(id: 1, pressure: 350),
+        ], timestamp: 0)
+
+        XCTAssertEqual(recorder.commands.count, 1)
+        XCTAssertEqual(result?.level, 3)
+        XCTAssertEqual(result?.succeeded, false)
     }
 
     func testPressureAttemptForwardsRateToFrameProcessor() {
