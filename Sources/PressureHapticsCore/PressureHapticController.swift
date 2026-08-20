@@ -36,7 +36,8 @@ public struct PressureHapticController: Sendable {
     public mutating func consume(
         pressure: Float,
         isTouching: Bool,
-        timestamp: TimeInterval
+        timestamp: TimeInterval,
+        rate: Double = 0
     ) -> HapticEmission? {
         guard isTouching else {
             resetEmissionState()
@@ -50,11 +51,12 @@ public struct PressureHapticController: Sendable {
         }
 
         let changedLevel = lastLevelIndex != selection.index
-        let canEmitForInterval = lastEmissionTime.map {
-            timestamp - $0 >= minimumInterval(for: normalizedPressure)
-        } ?? true
+        let validRate = rate.isFinite && rate > 0 ? rate : 0
+        let canEmitForRate = validRate > 0 && lastEmissionTime.map {
+            timestamp - $0 >= 1 / validRate
+        } ?? false
 
-        guard changedLevel || canEmitForInterval else {
+        guard changedLevel || canEmitForRate else {
             return nil
         }
 
@@ -72,9 +74,5 @@ public struct PressureHapticController: Sendable {
     private mutating func resetEmissionState() {
         lastEmissionTime = nil
         lastLevelIndex = nil
-    }
-
-    private func minimumInterval(for normalizedPressure: Float) -> TimeInterval {
-        0.24 - 0.12 * TimeInterval(normalizedPressure)
     }
 }

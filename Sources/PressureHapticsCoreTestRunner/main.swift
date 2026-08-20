@@ -131,7 +131,12 @@ private func verifyRateLimit() {
     )
 
     let first = unwrap(
-        controller.consume(pressure: 350, isTouching: true, timestamp: 0),
+        controller.consume(
+            pressure: 350,
+            isTouching: true,
+            timestamp: 0,
+            rate: 10
+        ),
         "Expected initial emission"
     )
     expectClose(first.normalizedPressure, 0.5)
@@ -141,7 +146,8 @@ private func verifyRateLimit() {
         controller.consume(
             pressure: 350,
             isTouching: true,
-            timestamp: 0.10
+            timestamp: 0.09,
+            rate: 10
         ) == nil,
         "Expected rate limiting within the same level"
     )
@@ -149,9 +155,35 @@ private func verifyRateLimit() {
         controller.consume(
             pressure: 350,
             isTouching: true,
-            timestamp: 0.18
+            timestamp: 0.10,
+            rate: 10
         ) != nil,
-        "Expected emission after the pressure-based interval"
+        "Expected emission after the configured rate interval"
+    )
+}
+
+private func verifyZeroRateOnlyEmitsOnLevelChange() {
+    var controller = PressureHapticController(
+        calibration: .init(restingPressure: 100, maximumPressure: 600)
+    )
+
+    expect(
+        controller.consume(
+            pressure: 350, isTouching: true, timestamp: 0, rate: 0
+        ) != nil,
+        "The first selected level must emit"
+    )
+    expect(
+        controller.consume(
+            pressure: 350, isTouching: true, timestamp: 10, rate: 0
+        ) == nil,
+        "Zero rate must suppress same-level repetition"
+    )
+    expect(
+        controller.consume(
+            pressure: 500, isTouching: true, timestamp: 10.01, rate: 0
+        ) != nil,
+        "A changed level must bypass zero rate"
     )
 }
 
@@ -205,6 +237,7 @@ verifyCalibration()
 verifySevenStageProfile()
 verifyProfileValidation()
 verifyRateLimit()
+verifyZeroRateOnlyEmitsOnLevelChange()
 verifyImmediateLevelChange()
 verifyReleaseReset()
 print("PressureHapticsCore tests passed")
