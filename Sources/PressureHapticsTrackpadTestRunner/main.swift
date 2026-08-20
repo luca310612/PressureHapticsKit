@@ -175,9 +175,38 @@ private func verifyFirstTouchSelectionTracksContactOrder() {
     )
 }
 
+private func verifyFirstTouchSelectionResetsAfterEmptyFrame() {
+    var processor = makeSelectionProcessor()
+    expect(
+        processor.consume(
+            [selectionTouches[1], selectionTouches[0]],
+            timestamp: 0,
+            selectionStrategy: .firstTouch
+        ).emission?.levelIndex == 5,
+        "The initial contact session must select its first touch"
+    )
+
+    expect(
+        processor.consume(
+            [], timestamp: 0.01, selectionStrategy: .firstTouch
+        ).emission == nil,
+        "An empty frame must end the current contact session"
+    )
+
+    expect(
+        processor.consume(
+            [selectionTouches[0], selectionTouches[1]],
+            timestamp: 0.02,
+            selectionStrategy: .firstTouch
+        ).emission?.levelIndex == 0,
+        "A new contact session must use its new first touch"
+    )
+}
+
 verifyMaximumActivePressureIsSelected()
 verifyEmptyFrameResetsController()
 verifyTouchPhaseSemantics()
 verifyPressureSelectionStrategies()
 verifyFirstTouchSelectionTracksContactOrder()
+verifyFirstTouchSelectionResetsAfterEmptyFrame()
 print("PressureHapticsTrackpad tests passed")

@@ -114,11 +114,13 @@ public final class TrackpadPressureHaptics {
             return
         }
 
-        let interval = 1 / rate
+        let repeatDelayNanoseconds = Self.repeatDelayNanoseconds(for: rate)
         let task = Task { [weak self] in
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: .seconds(interval))
+                    try await Task.sleep(
+                        nanoseconds: repeatDelayNanoseconds
+                    )
                 } catch {
                     return
                 }
@@ -134,6 +136,20 @@ public final class TrackpadPressureHaptics {
             }
         }
         replaceRepeatingHapticTask(with: task)
+    }
+
+    static func repeatDelayNanoseconds(for rate: Double) -> UInt64 {
+        guard rate.isFinite, rate > 0 else {
+            return .max
+        }
+
+        let nanoseconds = 1_000_000_000 / rate
+        guard nanoseconds.isFinite,
+              nanoseconds < Double(UInt64.max) else {
+            return .max
+        }
+
+        return max(UInt64(nanoseconds), 1)
     }
 
     public func stopHaptic() {
