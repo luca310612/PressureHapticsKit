@@ -91,7 +91,93 @@ private func verifyTouchPhaseSemantics() {
     expect(!TrackpadTouchPhase.leaving.isTouching, "leaving is inactive")
 }
 
+private let selectionTouches: [TrackpadTouchSample] = [
+    .init(
+        id: 1,
+        position: SIMD2(0.2, 0.3),
+        pressure: 200,
+        phase: .touching
+    ),
+    .init(
+        id: 2,
+        position: SIMD2(0.8, 0.7),
+        pressure: 500,
+        phase: .touching
+    ),
+    .init(
+        id: 3,
+        position: SIMD2(0.5, 0.5),
+        pressure: 350,
+        phase: .touching
+    ),
+]
+
+private func makeSelectionProcessor() -> PressureFrameProcessor {
+    PressureFrameProcessor(
+        calibration: .init(restingPressure: 40, maximumPressure: 640),
+        profile: .sevenStage
+    )
+}
+
+private func verifyPressureSelectionStrategies() {
+    var maximumProcessor = makeSelectionProcessor()
+    let maximum = maximumProcessor.consume(
+        selectionTouches, timestamp: 0, selectionStrategy: .maximum
+    )
+    expectClose(maximum.maximumPressure, 500)
+    expect(
+        maximum.emission?.levelIndex == 5,
+        "Maximum pressure must determine the emitted level"
+    )
+
+    var averageProcessor = makeSelectionProcessor()
+    let average = averageProcessor.consume(
+        selectionTouches, timestamp: 0, selectionStrategy: .average
+    )
+    expectClose(average.maximumPressure, 500)
+    expect(
+        average.emission?.levelIndex == 3,
+        "Average pressure must determine the emitted level"
+    )
+
+    var touchProcessor = makeSelectionProcessor()
+    expect(
+        touchProcessor.consume(
+            selectionTouches, timestamp: 0.01, selectionStrategy: .touch(id: 1)
+        ).emission?.levelIndex == 0,
+        "The selected touch ID must determine the emitted level"
+    )
+
+    var missingTouchProcessor = makeSelectionProcessor()
+    expect(
+        missingTouchProcessor.consume(
+            selectionTouches, timestamp: 0.02, selectionStrategy: .touch(id: 99)
+        ).emission == nil,
+        "A missing selected touch must not emit"
+    )
+}
+
+private func verifyFirstTouchSelectionTracksContactOrder() {
+    var processor = makeSelectionProcessor()
+    let initialTouches = [selectionTouches[1], selectionTouches[0]]
+    expect(
+        processor.consume(
+            initialTouches, timestamp: 0, selectionStrategy: .firstTouch
+        ).emission?.levelIndex == 5,
+        "The first active touch in the initial frame must be selected"
+    )
+
+    expect(
+        processor.consume(
+            [selectionTouches[0]], timestamp: 0.01, selectionStrategy: .firstTouch
+        ).emission?.levelIndex == 0,
+        "The next contact must drive emission after the first touch ends"
+    )
+}
+
 verifyMaximumActivePressureIsSelected()
 verifyEmptyFrameResetsController()
 verifyTouchPhaseSemantics()
+verifyPressureSelectionStrategies()
+verifyFirstTouchSelectionTracksContactOrder()
 print("PressureHapticsTrackpad tests passed")
