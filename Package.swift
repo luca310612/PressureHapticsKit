@@ -10,6 +10,7 @@ let package = Package(
             name: "PressureHapticsTrackpad",
             targets: ["PressureHapticsTrackpad"]
         ),
+        .library(name: "SandboxPressureKit", targets: ["SandboxPressureKit"]),
         .executable(
             name: "pressure-haptics-core-tests",
             targets: ["PressureHapticsCoreTestRunner"]
@@ -32,6 +33,11 @@ let package = Package(
     targets: [
         .target(name: "PressureHapticsCore"),
         .target(
+            name: "SandboxPressureKit",
+            dependencies: ["PressureHapticsCore"],
+            linkerSettings: [.linkedFramework("AppKit")]
+        ),
+        .target(
             name: "PressureHapticsTrackpad",
             dependencies: [
                 "PressureHapticsCore",
@@ -51,7 +57,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "SandboxPressureKitTestRunner",
-            dependencies: ["PressureHapticsCore"]
+            dependencies: ["PressureHapticsCore", "SandboxPressureKit"],
+            linkerSettings: [.linkedFramework("AppKit")]
         ),
         .testTarget(
             name: "PressureHapticsTrackpadTests",

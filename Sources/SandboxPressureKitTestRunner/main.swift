@@ -1,4 +1,6 @@
+import AppKit
 import PressureHapticsCore
+@_spi(Testing) import SandboxPressureKit
 
 private func expect(
     _ condition: @autoclosure () -> Bool,
@@ -77,10 +79,45 @@ private func verifyFullIntensityConsumerMultiplier() {
     expectClose(forceTouchMultiplier, 4)
 }
 
+private func verifyAppKitExtraction() {
+    let extracted = SandboxedPressureInput.makeSample(
+        pressure: 0.75,
+        stage: 2,
+        timestamp: 12
+    )
+
+    expectClose(extracted.pressure, 0.75)
+    expect(extracted.stage == 2, "Adapter must preserve stage")
+    expect(extracted.timestamp == 12, "Adapter must preserve timestamp")
+}
+
+private func verifyNonPressureEventsAreRejected() {
+    guard let mouseDown = NSEvent.mouseEvent(
+        with: .leftMouseDown,
+        location: .zero,
+        modifierFlags: [],
+        timestamp: 1,
+        windowNumber: 0,
+        context: nil,
+        eventNumber: 0,
+        clickCount: 1,
+        pressure: 0.5
+    ) else {
+        fatalError("Expected AppKit to construct a mouse-down event")
+    }
+
+    expect(
+        SandboxedPressureInput.sample(from: mouseDown) == nil,
+        "Adapter must reject non-pressure events before reading stage"
+    )
+}
+
 verifyDefaultCurve()
 verifyInputClamping()
 verifyStageHandling()
 verifyMissingInput()
 verifyInvalidConfigurationFallsBackToDefaults()
 verifyFullIntensityConsumerMultiplier()
+verifyAppKitExtraction()
+verifyNonPressureEventsAreRejected()
 print("SandboxPressureKit tests passed")
