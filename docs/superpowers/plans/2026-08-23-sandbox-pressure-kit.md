@@ -8,11 +8,11 @@ pressure to deterministic game intensity without raw trackpad or haptic APIs.
 **Architecture:** `PressureHapticsCore` receives the pure data model and
 nonlinear mapper. A new `SandboxPressureKit` target imports AppKit and adapts
 only `.pressure` events into the core model. A new executable runner covers
-core behavior, while an XCTest target accesses the package-internal event
-extraction helper because public AppKit constructors cannot create `.pressure`
-events deterministically.
+core behavior and imports the package-internal extraction helper through its
+`@_spi(Testing)` interface because public AppKit constructors cannot create
+`.pressure` events deterministically.
 
-**Tech Stack:** Swift 6, Swift Package Manager, Foundation, AppKit, XCTest.
+**Tech Stack:** Swift 6, Swift Package Manager, Foundation, AppKit.
 
 **Spec:** `docs/superpowers/specs/2026-08-23-sandbox-pressure-kit-design.md`
 
@@ -229,71 +229,65 @@ events deterministically.
   git commit -m "feat: map public pressure to game intensity"
   ```
 
-### Task 2: Add the AppKit-Only Adapter and Its Unit Tests
+### Task 2: Add the AppKit-Only Adapter and Its Executable Tests
 
 **Files:**
 - Modify: `Package.swift`
 - Create: `Sources/SandboxPressureKit/SandboxedPressureInput.swift`
-- Create: `Tests/SandboxPressureKitTests/SandboxedPressureInputTests.swift`
+- Modify: `Sources/SandboxPressureKitTestRunner/main.swift`
 
 **Interfaces:**
 - Consumes: `NSEvent` only in `SandboxPressureKit`.
 - Produces: `SandboxedPressureInput.sample(from:) -> PublicPressureSample?`.
-- Produces: package-internal `SandboxedPressureInput.sample(pressure:stage:timestamp:)`
-  for deterministic XCTest verification of the extraction boundary.
+- Produces: `@_spi(Testing)` package-internal
+  `SandboxedPressureInput.makeSample(pressure:stage:timestamp:)` for
+  deterministic executable verification of the extraction boundary.
 
-- [ ] **Step 1: Add the target declarations and write failing adapter tests**
+- [ ] **Step 1: Add the runner dependency and write failing adapter tests**
 
-  Add the library product, target, and XCTest target:
+  Add the library product and make the existing runner depend on it:
 
   ```swift
   .library(name: "SandboxPressureKit", targets: ["SandboxPressureKit"]),
   // ...
-  .target(
-      name: "SandboxPressureKit",
-      dependencies: ["PressureHapticsCore"],
+  .executableTarget(
+      name: "SandboxPressureKitTestRunner",
+      dependencies: ["PressureHapticsCore", "SandboxPressureKit"],
       linkerSettings: [.linkedFramework("AppKit")]
-  ),
-  .testTarget(
-      name: "SandboxPressureKitTests",
-      dependencies: ["SandboxPressureKit", "PressureHapticsCore"]
   ),
   ```
 
-  Create the XCTest file using `@testable import SandboxPressureKit`:
+  Extend `Sources/SandboxPressureKitTestRunner/main.swift` with the executable
+  checks:
 
   ```swift
   import AppKit
-  import XCTest
-  @testable import SandboxPressureKit
+  @_spi(Testing) import SandboxPressureKit
 
-  final class SandboxedPressureInputTests: XCTestCase {
-      func testExtractsPublicPressureFields() {
-          let sample = SandboxedPressureInput.sample(
-              pressure: 0.75, stage: 2, timestamp: 12
-          )
-          XCTAssertEqual(sample.pressure, 0.75)
-          XCTAssertEqual(sample.stage, 2)
-          XCTAssertEqual(sample.timestamp, 12)
-      }
+  let extracted = SandboxedPressureInput.makeSample(
+      pressure: 0.75, stage: 2, timestamp: 12
+  )
+  expectClose(extracted.pressure, 0.75)
+  expect(extracted.stage == 2, "Adapter must preserve stage")
+  expect(extracted.timestamp == 12, "Adapter must preserve timestamp")
 
-      func testRejectsNonPressureEventBeforeReadingStage() {
-          let event = NSEvent.mouseEvent(
-              with: .leftMouseDown, location: .zero, modifierFlags: [],
-              timestamp: 1, windowNumber: 0, context: nil, eventNumber: 0,
-              clickCount: 1, pressure: 0.5
-          )!
-          XCTAssertNil(SandboxedPressureInput.sample(from: event))
-      }
-  }
+  let mouseDown = NSEvent.mouseEvent(
+      with: .leftMouseDown, location: .zero, modifierFlags: [],
+      timestamp: 1, windowNumber: 0, context: nil, eventNumber: 0,
+      clickCount: 1, pressure: 0.5
+  )!
+  expect(
+      SandboxedPressureInput.sample(from: mouseDown) == nil,
+      "Adapter must reject non-pressure events before reading stage"
+  )
   ```
 
-- [ ] **Step 2: Verify that the adapter tests fail for the missing module**
+- [ ] **Step 2: Verify that the adapter tests fail for the missing target**
 
-  Run: `swift test --filter SandboxedPressureInputTests`
+  Run: `swift run sandbox-pressure-tests`
 
-  Expected: compilation fails because the `SandboxPressureKit` target and
-  `SandboxedPressureInput` API do not yet exist.
+  Expected: package resolution fails because the `SandboxPressureKit` target
+  and `SandboxedPressureInput` API do not yet exist.
 
 - [ ] **Step 3: Implement the AppKit adapter**
 
@@ -304,19 +298,21 @@ events deterministically.
   import PressureHapticsCore
 
   public enum SandboxedPressureInput {
+      /// Reads one current public pressure event; it is not a per-finger force sample.
       public static func sample(from event: NSEvent) -> PublicPressureSample? {
           guard event.type == .pressure else {
               return nil
           }
 
-          return sample(
+          return makeSample(
               pressure: event.pressure,
               stage: event.stage,
               timestamp: event.timestamp
           )
       }
 
-      static func sample(
+      @_spi(Testing)
+      public static func makeSample(
           pressure: Float,
           stage: Int,
           timestamp: TimeInterval
@@ -326,20 +322,17 @@ events deterministically.
   }
   ```
 
-  Add public documentation to `sample(from:)` stating that it accepts only
-  `.pressure` events, never observes global input, returns the event's single
-  current pressure value, and is not a per-finger physical-force reading.
-
 - [ ] **Step 4: Verify the adapter tests are green**
 
-  Run: `swift test --filter SandboxedPressureInputTests`
+  Run: `swift run sandbox-pressure-tests`
 
-  Expected: both adapter tests pass with no uncaught AppKit exception.
+  Expected: every core and adapter check passes with no uncaught AppKit
+  exception.
 
 - [ ] **Step 5: Commit the adapter**
 
   ```bash
-  git add Package.swift Sources/SandboxPressureKit/SandboxedPressureInput.swift Tests/SandboxPressureKitTests/SandboxedPressureInputTests.swift
+  git add Package.swift Sources/SandboxPressureKit/SandboxedPressureInput.swift Sources/SandboxPressureKitTestRunner/main.swift
   git commit -m "feat: add sandboxed AppKit pressure input"
   ```
 
@@ -378,12 +371,13 @@ events deterministically.
   Expected: all three commands exit 0. The two legacy runners preserve their
   current output and behavior.
 
-- [ ] **Step 3: Run the package's XCTest suite**
+- [ ] **Step 3: Build every non-XCTest package target**
 
-  Run: `swift test`
+  Run: `swift build`
 
-  Expected: all XCTest targets pass, including `SandboxPressureKitTests` and
-  the existing `PressureHapticsTrackpadTests`.
+  Expected: all library and executable targets compile. The current developer
+  directory lacks XCTest, so package test targets require full Xcode as a
+  separate environment verification.
 
 - [ ] **Step 4: Commit only intentional test adjustment if one was required**
 
@@ -402,7 +396,6 @@ events deterministically.
 - Review: `Sources/PressureHapticsCore/GamePressureMapper.swift`
 - Review: `Sources/SandboxPressureKit/SandboxedPressureInput.swift`
 - Review: `Sources/SandboxPressureKitTestRunner/main.swift`
-- Review: `Tests/SandboxPressureKitTests/SandboxedPressureInputTests.swift`
 
 **Interfaces:**
 - Consumes: the full implementation and fresh verification outputs.
@@ -431,10 +424,11 @@ events deterministically.
   swift run sandbox-pressure-tests
   swift run pressure-haptics-core-tests
   swift run pressure-haptics-trackpad-tests
-  swift test
+  swift build
   ```
 
-  Expected: every command exits 0.
+  Expected: every command exits 0. `swift test` is excluded only because the
+  active Command Line Tools developer directory cannot resolve XCTest.
 
 - [ ] **Step 4: Report changes with before/after consumer integration**
 

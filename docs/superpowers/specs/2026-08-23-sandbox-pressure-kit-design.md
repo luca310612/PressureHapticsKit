@@ -149,12 +149,12 @@ its haptic behavior remain source-compatible and unchanged.
 
 ## Testing and Verification
 
-The executable runner and XCTest target verify deterministic behavior:
+The executable runner verifies deterministic behavior:
 
 1. The package-internal AppKit extraction helper converts pressure, stage, and
-   timestamp without any raw-input import; XCTest accesses it with
-   `@testable import SandboxPressureKit` because public AppKit constructors do
-   not create synthetic `.pressure` events.
+   timestamp without any raw-input import; the runner imports that helper with
+   `@_spi(Testing) import SandboxPressureKit` because public AppKit
+   constructors do not create synthetic `.pressure` events.
 2. The public AppKit adapter rejects a synthetic non-pressure event before
    reading `stage`.
 3. Default dead-zone behavior for values `0`, `0.05`, `0.5`, and `1.0`.
@@ -166,6 +166,6 @@ The executable runner and XCTest target verify deterministic behavior:
    capping to the consuming terrain code.
 
 Verification runs the new executable, both existing executable runners, and
-`swift test`. The latter may expose the pre-existing, uncommitted test change
-in the original worktree; the isolated worktree begins from its committed
-baseline.
+`swift build`. `swift test` remains an additional check in environments with
+the complete Xcode developer directory; the current Command Line Tools-only
+environment cannot resolve XCTest before compiling any package test source.
