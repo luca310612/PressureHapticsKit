@@ -4,4 +4,5 @@
 .omc/
 .swiftpm/
 .docs/
+/gnat/
 .test/
