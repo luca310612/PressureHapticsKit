@@ -1,6 +1,0 @@
-{
-  "python.analysis.extraPaths": ["./gnat/src"],
-  "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": ["gnat/test"],
-  "editor.rulers": [120]
-}
