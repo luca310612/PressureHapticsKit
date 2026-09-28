@@ -11,12 +11,8 @@ let package = Package(
             targets: ["PressureHapticsTrackpad"]
         ),
         .executable(
-            name: "pressure-haptics-core-tests",
-            targets: ["PressureHapticsCoreTestRunner"]
-        ),
-        .executable(
-            name: "pressure-haptics-trackpad-tests",
-            targets: ["PressureHapticsTrackpadTestRunner"]
+            name: "pressure-haptics-demo",
+            targets: ["PressureHapticsDemo"]
         ),
     ],
     dependencies: [
@@ -38,16 +34,17 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "PressureHapticsCoreTestRunner",
-            dependencies: ["PressureHapticsCore"]
-        ),
-        .executableTarget(
-            name: "PressureHapticsTrackpadTestRunner",
+            name: "PressureHapticsDemo",
             dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
         ),
         .testTarget(
             name: "PressureHapticsTrackpadTests",
             dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
+        ),
+        .testTarget(
+            name: "PressureHapticsKitComprehensiveTests",
+            dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"],
+            path: "test"
         ),
     ]
 )

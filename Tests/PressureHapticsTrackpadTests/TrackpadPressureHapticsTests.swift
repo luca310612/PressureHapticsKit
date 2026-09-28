@@ -242,6 +242,23 @@ final class TrackpadPressureHapticsTests: XCTestCase {
         XCTAssertEqual(result?.succeeded, false)
     }
 
+    func testManualModeSuppressesPressureHapticsButPreservesInputAndExplicitHaptics() {
+        let recorder = HapticTriggerRecorder()
+        let haptics = makeHaptics(recorder: recorder)
+        var receivedFrames = 0
+        haptics.onTouchFrame = { _ in receivedFrames += 1 }
+        haptics.isAutomaticHapticsEnabled = false
+
+        haptics.consume([makeTouch(id: 1, pressure: 350)], timestamp: 0)
+
+        XCTAssertEqual(receivedFrames, 1)
+        XCTAssertTrue(recorder.commands.isEmpty)
+
+        haptics.triggerHaptic(level: 3)
+
+        XCTAssertEqual(recorder.commands.count, 1)
+    }
+
     func testPressureAttemptForwardsRateToFrameProcessor() {
         let recorder = HapticTriggerRecorder()
         let haptics = makeHaptics(recorder: recorder)
@@ -277,6 +294,26 @@ final class TrackpadPressureHapticsTests: XCTestCase {
             pressure: pressure,
             phase: .touching
         )
+    }
+
+    func testTouchSamplePreservesTrackpadContactDetails() {
+        let sample = TrackpadTouchSample(
+            id: 3,
+            position: SIMD2(0.25, 0.75),
+            pressure: 420,
+            phase: .touching,
+            total: 0.7,
+            axis: SIMD2(0.12, 0.05),
+            angle: 0.4,
+            density: 0.3,
+            timestamp: "12:34:56.0000"
+        )
+
+        XCTAssertEqual(sample.total, 0.7)
+        XCTAssertEqual(sample.axis, SIMD2(0.12, 0.05))
+        XCTAssertEqual(sample.angle, 0.4)
+        XCTAssertEqual(sample.density, 0.3)
+        XCTAssertEqual(sample.timestamp, "12:34:56.0000")
     }
 
     private func waitForCommandCount(

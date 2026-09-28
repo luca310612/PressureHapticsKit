@@ -38,17 +38,37 @@ public struct TrackpadTouchSample: Sendable, Hashable {
     public let position: SIMD2<Float>
     public let pressure: Float
     public let phase: TrackpadTouchPhase
+    /// Total capacitance reported by the trackpad for this contact.
+    public let total: Float
+    /// Contact ellipse axes in major/minor order.
+    public let axis: SIMD2<Float>
+    /// Finger angle reported by the trackpad, in the device's native units.
+    public let angle: Float
+    /// Capacitance density for this contact.
+    public let density: Float
+    /// Human-readable source timestamp retained by OpenMultitouchSupport.
+    public let timestamp: String
 
     public init(
         id: Int32,
         position: SIMD2<Float>,
         pressure: Float,
-        phase: TrackpadTouchPhase
+        phase: TrackpadTouchPhase,
+        total: Float = 0,
+        axis: SIMD2<Float> = .zero,
+        angle: Float = 0,
+        density: Float = 0,
+        timestamp: String = ""
     ) {
         self.id = id
         self.position = position
         self.pressure = pressure
         self.phase = phase
+        self.total = total
+        self.axis = axis
+        self.angle = angle
+        self.density = density
+        self.timestamp = timestamp
     }
 
     init(_ touch: OMSTouchData) {
@@ -56,7 +76,12 @@ public struct TrackpadTouchSample: Sendable, Hashable {
             id: touch.id,
             position: SIMD2(touch.position.x, touch.position.y),
             pressure: touch.pressure,
-            phase: TrackpadTouchPhase(touch.state)
+            phase: TrackpadTouchPhase(touch.state),
+            total: touch.total,
+            axis: SIMD2(touch.axis.major, touch.axis.minor),
+            angle: touch.angle,
+            density: touch.density,
+            timestamp: touch.timestamp
         )
     }
 }

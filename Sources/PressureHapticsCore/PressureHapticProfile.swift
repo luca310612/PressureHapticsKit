@@ -30,6 +30,7 @@ public struct PressureHapticLevel: Sendable, Hashable {
 public enum PressureHapticProfileError: Error, Sendable, Equatable {
     case emptyLevels
     case invalidLowerBound(index: Int)
+    case invalidCommand(index: Int)
     case levelsMustBeStrictlyAscending
 }
 
@@ -46,6 +47,10 @@ public struct PressureHapticProfile: Sendable, Hashable {
 
     public let levels: [PressureHapticLevel]
 
+    private init(uncheckedLevels levels: [PressureHapticLevel]) {
+        self.levels = levels
+    }
+
     public init(levels: [PressureHapticLevel]) throws {
         guard !levels.isEmpty else {
             throw PressureHapticProfileError.emptyLevels
@@ -55,6 +60,11 @@ public struct PressureHapticProfile: Sendable, Hashable {
             guard level.lowerBound.isFinite,
                   (0...1).contains(level.lowerBound) else {
                 throw PressureHapticProfileError.invalidLowerBound(index: index)
+            }
+
+            guard level.command.rawParameter2.isFinite,
+                  level.command.rawParameter3.isFinite else {
+                throw PressureHapticProfileError.invalidCommand(index: index)
             }
 
             if index > 0, levels[index - 1].lowerBound >= level.lowerBound {
@@ -75,6 +85,41 @@ public struct PressureHapticProfile: Sendable, Hashable {
             return nil
         }
 
+        return Selection(index: index, level: levels[index])
+    }
+
+    /// Selects a level while retaining the previous level inside its
+    /// hysteresis band. Hysteresis is expressed in normalized pressure units.
+    public func selection(
+        for normalizedPressure: Float,
+        previousIndex: Int?,
+        hysteresis: Float
+    ) -> Selection? {
+        guard normalizedPressure.isFinite,
+              hysteresis.isFinite,
+              hysteresis >= 0 else {
+            return nil
+        }
+
+        let pressure = min(max(normalizedPressure, 0), 1)
+        guard let previousIndex, levels.indices.contains(previousIndex) else {
+            return selection(for: pressure)
+        }
+
+        var index = previousIndex
+        while index + 1 < levels.count,
+              pressure >= levels[index + 1].lowerBound + hysteresis {
+            index += 1
+        }
+
+        while index > 0,
+              pressure < levels[index].lowerBound - hysteresis {
+            index -= 1
+        }
+
+        guard pressure >= levels[0].lowerBound - hysteresis else {
+            return nil
+        }
         return Selection(index: index, level: levels[index])
     }
 
@@ -107,6 +152,6 @@ public struct PressureHapticProfile: Sendable, Hashable {
             )
         }
 
-        return try! PressureHapticProfile(levels: levels)
+        return PressureHapticProfile(uncheckedLevels: levels)
     }()
 }

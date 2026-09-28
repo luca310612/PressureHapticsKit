@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gnat - FlyGym viewer</title>
+  <link rel="stylesheet" href="/viewer.css">
+</head>
+<body>
+  <main class="arcade">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-mark">G</div>
+        <div>
+          <p class="eyebrow">NEUROMECHFLY / NATIVE VIEWER</p>
+          <h1>GNAT / FLYGYM</h1>
+        </div>
+      </div>
+      <div class="live-badge"><span class="live-dot"></span>LIVE / LOCAL</div>
+    </header>
+    <div class="round-meta">
+      <span>ROUND 01 · TETHERED SIMULATION</span>
+      <span id="status">接続中</span>
+      <span>FRAME / STREAM</span>
+    </div>
+    <div class="cabinet">
+      <section class="game-column">
+        <div class="window-bar"><span>DOOMFLY.EXE / SIMULATION</span><span>3D FLY / CAMERA</span></div>
+        <div id="main-frame">
+        <img id="main-view" src="/frame/main.jpg?token=__GNAT_TOKEN__" alt="MuJoCo simulation" draggable="false">
+          <div class="screen-caption">DRAG TO ORBIT · SCROLL / PINCH TO ZOOM</div>
+        </div>
+        <section class="eye-strip">
+          <div class="eye-strip-title">FLY'S VIEW <span>/ LEFT + RIGHT EYE</span></div>
+          <div class="eyes">
+            <figure><img id="left-eye" src="/frame/left.jpg?token=__GNAT_TOKEN__" alt="左眼">LEFT EYE</figure>
+            <figure><img id="right-eye" src="/frame/right.jpg?token=__GNAT_TOKEN__" alt="右眼">RIGHT EYE</figure>
+          </div>
+          <p class="panel-foot">OMMATIDIA → DEMO RETINA · 33.3 MS NEURAL / 30 FPS FRAME</p>
+        </section>
+        <div class="game-stats">
+          <div><span class="stat-label">MODE</span><strong>TETHERED</strong></div>
+          <div><span class="stat-label">VIEW</span><strong>FREE CAMERA</strong></div>
+          <div><span class="stat-label">SIGNAL</span><strong id="signal-status">LOCAL BRAIN</strong></div>
+        </div>
+      </section>
+      <aside class="live-telemetry">
+        <div class="telemetry-title">LIVE TELEMETRY</div>
+        <div class="telemetry-block">
+          <p class="telemetry-kicker">SUBJECT</p>
+          <div class="telemetry-value">GNAT / FLYGYM</div>
+          <p class="telemetry-note">Mujoco tethered world<br>local browser spectator</p>
+        </div>
+        <div class="telemetry-block">
+          <p class="telemetry-kicker">BACKEND</p>
+          <div id="backend-status" class="telemetry-value">DEMO NUMPY / NO CONNECTOME</div>
+          <p id="motor-status" class="telemetry-note">MOTOR LINK: WAITING FOR CALIBRATED MAPPING</p>
+        </div>
+        <div class="telemetry-block">
+          <p class="telemetry-kicker">CONTROLS</p>
+          <div class="controls">
+            <button id="fire" onclick="command('/fire')">MOVE OBJECT</button>
+            <button id="reset" onclick="command('/reset')">RESET ROUND</button>
+            <button id="reset-camera" onclick="resetCamera()">RECENTER CAMERA</button>
+            <button id="quit" onclick="command('/quit')">QUIT VIEWER</button>
+          </div>
+          <p id="camera-help">DRAG TO ORBIT · SCROLL / PINCH TO ZOOM<br>SPACE: MOVE OBJECT</p>
+        </div>
+      </aside>
+    </div>
+    <section class="inspection">
+      <div class="window-bar"><span>INSPECTION / SENSORY + NEURAL SIGNAL</span><span>__GNAT_BACKEND_LABEL__</span></div>
+      <div class="inspection-grid">
+        <div class="signal-panel neural-panel">
+          <h2>NEURAL ACTIVITY <span>/ RETINA → OPTIC LOBE → CENTRAL → MOTOR</span></h2>
+          <canvas id="brain-view" width="1200" height="360"></canvas>
+          <p class="panel-foot">THE BRAIN RUNS LOCALLY; THIS CAN BE THE DOOMFLY MALECNS GRAPH OR THE EXPLICIT DEMO BACKEND.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/viewer.js"></script>
+</body>
+</html>

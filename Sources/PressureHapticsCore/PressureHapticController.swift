@@ -24,13 +24,30 @@ public struct PressureHapticController: Sendable {
     private let profile: PressureHapticProfile
     private var lastEmissionTime: TimeInterval?
     private var lastLevelIndex: Int?
+    public var levelHysteresis: Float {
+        didSet {
+            guard levelHysteresis.isFinite,
+                  (0...1).contains(levelHysteresis) else {
+                levelHysteresis = oldValue
+                return
+            }
+        }
+    }
 
     public init(
         calibration: PressureCalibration,
-        profile: PressureHapticProfile = .sevenStage
+        profile: PressureHapticProfile = .sevenStage,
+        levelHysteresis: Float = 0.02
     ) {
         self.calibration = calibration
         self.profile = profile
+        self.levelHysteresis = levelHysteresis.isFinite && (0...1).contains(levelHysteresis)
+            ? levelHysteresis
+            : 0.02
+    }
+
+    public mutating func reset() {
+        resetEmissionState()
     }
 
     public mutating func consume(
@@ -39,15 +56,28 @@ public struct PressureHapticController: Sendable {
         timestamp: TimeInterval,
         rate: Double = 0
     ) -> HapticEmission? {
+        guard timestamp.isFinite else {
+            resetEmissionState()
+            return nil
+        }
+
         guard isTouching else {
             resetEmissionState()
             return nil
         }
 
         let normalizedPressure = calibration.normalize(pressure)
-        guard let selection = profile.selection(for: normalizedPressure) else {
+        guard let selection = profile.selection(
+            for: normalizedPressure,
+            previousIndex: lastLevelIndex,
+            hysteresis: levelHysteresis
+        ) else {
             resetEmissionState()
             return nil
+        }
+
+        if let lastEmissionTime, timestamp < lastEmissionTime {
+            resetEmissionState()
         }
 
         let changedLevel = lastLevelIndex != selection.index

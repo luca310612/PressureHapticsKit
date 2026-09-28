@@ -4,7 +4,7 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:PressureHapticsKit}",
+            "cwd": "${workspaceFolder}",
             "name": "Debug pressure-haptics-core-tests",
             "target": "pressure-haptics-core-tests",
             "configuration": "debug",
@@ -14,7 +14,7 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:PressureHapticsKit}",
+            "cwd": "${workspaceFolder}",
             "name": "Release pressure-haptics-core-tests",
             "target": "pressure-haptics-core-tests",
             "configuration": "release",
@@ -24,7 +24,7 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:PressureHapticsKit}",
+            "cwd": "${workspaceFolder}",
             "name": "Debug pressure-haptics-trackpad-tests",
             "target": "pressure-haptics-trackpad-tests",
             "configuration": "debug",
@@ -34,11 +34,71 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:PressureHapticsKit}",
+            "cwd": "${workspaceFolder}",
             "name": "Release pressure-haptics-trackpad-tests",
             "target": "pressure-haptics-trackpad-tests",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release pressure-haptics-trackpad-tests"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Debug pressure-haptics-demo",
+            "target": "pressure-haptics-demo",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug pressure-haptics-demo"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Release pressure-haptics-demo",
+            "target": "pressure-haptics-demo",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release pressure-haptics-demo"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Debug PressureHapticsTrackpadTestRunner",
+            "target": "PressureHapticsTrackpadTestRunner",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug PressureHapticsTrackpadTestRunner"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Release PressureHapticsTrackpadTestRunner",
+            "target": "PressureHapticsTrackpadTestRunner",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release PressureHapticsTrackpadTestRunner"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Debug PressureHapticsCoreTestRunner",
+            "target": "PressureHapticsCoreTestRunner",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug PressureHapticsCoreTestRunner"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Release PressureHapticsCoreTestRunner",
+            "target": "PressureHapticsCoreTestRunner",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release PressureHapticsCoreTestRunner"
         }
     ]
 }
