@@ -6,6 +6,17 @@ import PressureHapticsTrackpad
 @MainActor
 final class DemoModel: ObservableObject {
     @Published var normalizedPressure: Float = 0
+    @Published var gradeCount = 7 {
+        didSet {
+            guard oldValue != gradeCount,
+                  let profile = try? PressureHapticProfile.linear(
+                      levelCount: gradeCount
+                  ) else {
+                return
+            }
+            haptics.profile = profile
+        }
+    }
     private var rawPressure: Float = 0
     @Published var currentPressureDelta: Float?
     @Published var peakPressureDelta: Float?
@@ -27,8 +38,8 @@ final class DemoModel: ObservableObject {
             guard let self else { return }
             self.touchCount = touchCount
             // A non-conductive object can remain on the trackpad after the
-            // capacitive touch event disappears. Keep the last valid weight
-            // instead of treating the missing touch event as zero weight.
+            // capacitive touch event disappears. Keep the last pressure delta
+            // briefly instead of treating a missing event as zero pressure.
             guard touchCount > 0 else {
                 self.scheduleContactLossReset()
                 return
@@ -86,6 +97,7 @@ final class DemoModel: ObservableObject {
     func trigger(level: Int) {
         haptics.triggerHaptic(level: level)
     }
+
 }
 
 struct ContentView: View {
@@ -97,9 +109,10 @@ struct ContentView: View {
                 .font(.title2)
 
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
-                GridRow { Text("現在の圧力（正規化）"); Text(String(format: "%.3f", model.normalizedPressure)) }
-                GridRow { Text("現在の圧力差相当"); Text(model.currentPressureDelta.map { String(format: "%.1f", $0) } ?? "未接触") }
-                GridRow { Text("接触中の最大圧力差相当"); Text(model.peakPressureDelta.map { String(format: "%.1f", $0) } ?? "未接触") }
+                GridRow { Text("現在の圧力（正規化 0–10）"); Text(String(format: "%.2f", model.normalizedPressure)) }
+                GridRow { Text("段階数"); Text("\(model.gradeCount)") }
+                GridRow { Text("現在の圧力差（未校正）"); Text(model.currentPressureDelta.map { String(format: "%.1f", $0) } ?? "未設定") }
+                GridRow { Text("接触中の最大圧力差"); Text(model.peakPressureDelta.map { String(format: "%.1f", $0) } ?? "未設定") }
                 GridRow { Text("接触数"); Text("\(model.touchCount)") }
                 GridRow { Text("最後のレベル"); Text(model.lastLevel) }
                 GridRow { Text("最後の結果"); Text(model.lastResult) }
@@ -111,13 +124,15 @@ struct ContentView: View {
                     model.haptics.isAutomaticHapticsEnabled = enabled
                 }
 
+            Stepper("段階数: \(model.gradeCount)", value: $model.gradeCount, in: 1...12)
+
             HStack {
                 Button(model.isListening ? "停止" : "監視開始") {
                     model.isListening ? model.stop() : model.start()
                 }
-                Button("開始") { model.tare() }
+                Button("ゼロ点を設定") { model.tare() }
                     .disabled(model.touchCount == 0)
-                ForEach(1...7, id: \.self) { level in
+                ForEach(1...model.gradeCount, id: \.self) { level in
                     Button("L\(level)") { model.trigger(level: level) }
                 }
             }

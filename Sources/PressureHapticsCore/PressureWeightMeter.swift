@@ -76,6 +76,8 @@ public struct PressureWeightMeter: Sendable, Hashable {
         guard rawPressure.isFinite, let zeroOffset, zeroOffset.isFinite else {
             return nil
         }
-        return max(0, rawPressure - zeroOffset)
+        let delta = max(0, Double(rawPressure) - Double(zeroOffset))
+        guard delta <= Double(Float.greatestFiniteMagnitude) else { return nil }
+        return Float(delta)
     }
 }

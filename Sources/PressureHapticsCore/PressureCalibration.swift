@@ -71,8 +71,9 @@ public struct PressureCalibration: Sendable, Hashable {
         }
     }
 
+    /// Maps raw pressure onto the 0–10 normalized-pressure scale.
     public func normalize(_ pressure: Float) -> Float {
-        let range = maximumPressure - restingPressure
+        let range = Double(maximumPressure) - Double(restingPressure)
 
         guard restingPressure.isFinite,
               maximumPressure.isFinite,
@@ -81,7 +82,9 @@ public struct PressureCalibration: Sendable, Hashable {
             return 0
         }
 
-        return min(max((pressure - restingPressure) / range, 0), 1)
+        let normalized = (Double(pressure) - Double(restingPressure))
+            / range * Double(PressureNormalization.maximum)
+        return Float(min(max(normalized, 0), Double(PressureNormalization.maximum)))
     }
 
     public func grams(for pressure: Float) -> Float? {
@@ -98,8 +101,11 @@ public struct PressureCalibration: Sendable, Hashable {
         if pressure <= points[0].pressure { return points[0].grams }
         if pressure >= points[points.count - 1].pressure { return points[points.count - 1].grams }
         for pair in zip(points, points.dropFirst()) where pressure <= pair.1.pressure {
-            let fraction = (pressure - pair.0.pressure) / (pair.1.pressure - pair.0.pressure)
-            return pair.0.grams + fraction * (pair.1.grams - pair.0.grams)
+            let fraction = (Double(pressure) - Double(pair.0.pressure))
+                / (Double(pair.1.pressure) - Double(pair.0.pressure))
+            let grams = Double(pair.0.grams)
+                + fraction * (Double(pair.1.grams) - Double(pair.0.grams))
+            return Float(grams)
         }
         return nil
     }

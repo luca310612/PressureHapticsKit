@@ -6,3 +6,6 @@
 .docs/
 /gnat/
 .test/
+.prompts/
+.vscode/
+

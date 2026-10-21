@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import OpenMultitouchSupport
 import PressureHapticsCore
@@ -19,16 +20,22 @@ public enum TrackpadPressureHapticsStartError: Error, Sendable, Equatable {
 
 @MainActor
 public final class TrackpadPressureHaptics {
-    private let manager: OMSManager
-    private let profile: PressureHapticProfile
+    private let inputSource: any TrackpadInputSource
     private let hapticTrigger: (RawHapticCommand) -> Bool
+    private let uptime: @Sendable () -> TimeInterval
     private var frameProcessor: PressureFrameProcessor
     private var listeningTask: Task<Void, Never>?
+    private var inputObservation: AnyCancellable?
+    private var frameBuffer: TrackpadFrameBuffer?
+    private var listeningGeneration: UInt64 = 0
+    private var lastContactTokens: [Int32: UInt64] = [:]
     private var repeatingHapticTask: Task<Void, Never>?
     private var repeatingHapticLevel: Int?
     private var repeatingHapticGeneration: UInt64 = 0
     private var ownsListening = false
     private static weak var activeInstance: TrackpadPressureHaptics?
+    /// Old pressure must never be replayed as current tactile feedback.
+    static let maximumFrameAge: TimeInterval = 0.1
 
     /// Receives the maximum pressure among active contacts.
     public var onPressureSample: ((Float, Int) -> Void)?
@@ -38,23 +45,12 @@ public final class TrackpadPressureHaptics {
     public var onHapticTrigger: ((HapticTriggerResult) -> Void)?
     public private(set) var lastStartError: TrackpadPressureHapticsStartError?
     public var selectionStrategy: PressureSelectionStrategy = .maximum
-    /// EMA weight for each new pressure sample. Values must be in (0, 1]; 1 disables filtering.
-    public var pressureSmoothingFactor: Float = 0.35 {
-        didSet {
-            guard pressureSmoothingFactor.isFinite,
-                  pressureSmoothingFactor > 0,
-                  pressureSmoothingFactor <= 1 else {
-                pressureSmoothingFactor = oldValue
-                return
-            }
-            frameProcessor.smoothingFactor = pressureSmoothingFactor
-        }
-    }
-    /// Normalized pressure margin on either side of a level boundary.
-    public var levelHysteresis: Float = 0.02 {
+    /// Pressure margin on either side of a level boundary, on the 0–10
+    /// normalized scale.
+    public var levelHysteresis: Float = 0.2 {
         didSet {
             guard levelHysteresis.isFinite,
-                  (0...1).contains(levelHysteresis) else {
+                  PressureNormalization.range.contains(levelHysteresis) else {
                 levelHysteresis = oldValue
                 return
             }
@@ -66,7 +62,21 @@ public final class TrackpadPressureHaptics {
     public var isAutomaticHapticsEnabled = true {
         didSet {
             guard oldValue != isAutomaticHapticsEnabled else { return }
-            frameProcessor.reset()
+            frameProcessor.resetHaptics()
+        }
+    }
+    /// Replacing the profile is possible at any time, including while
+    /// listening. Level selection state clears so thresholds are applied
+    /// from the next frame, and a repeating haptic stops when its level no
+    /// longer exists.
+    public var profile: PressureHapticProfile {
+        didSet {
+            guard oldValue != profile else { return }
+            frameProcessor.profile = profile
+            if let level = repeatingHapticLevel,
+               !profile.levels.indices.contains(level - 1) {
+                stopHaptic()
+            }
         }
     }
     public var rate: Double = 0 {
@@ -92,7 +102,7 @@ public final class TrackpadPressureHaptics {
     }
 
     public var isListening: Bool {
-        ownsListening && manager.isListening && listeningTask != nil
+        ownsListening && inputSource.isListening && listeningTask != nil
     }
 
     private func scheduleRepeatingHaptic(
@@ -124,34 +134,36 @@ public final class TrackpadPressureHaptics {
         replaceRepeatingHapticTask(with: task)
     }
 
-    public init(
+    public convenience init(
         calibration: PressureCalibration,
         profile: PressureHapticProfile = .sevenStage
     ) {
         let manager = OMSManager.shared
-        self.manager = manager
-        self.profile = profile
-        hapticTrigger = { command in
-            manager.triggerRawHaptic(
-                actuationID: command.actuationID,
-                unknown1: command.rawParameter1,
-                unknown2: command.rawParameter2,
-                unknown3: command.rawParameter3
-            )
-        }
-        frameProcessor = PressureFrameProcessor(
+        self.init(
             calibration: calibration,
-            profile: profile
+            profile: profile,
+            inputSource: OMSTrackpadInputSource(manager: manager),
+            hapticTrigger: { command in
+                manager.triggerRawHaptic(
+                    actuationID: command.actuationID,
+                    unknown1: command.rawParameter1,
+                    unknown2: command.rawParameter2,
+                    unknown3: command.rawParameter3
+                )
+            }
         )
     }
 
     init(
         calibration: PressureCalibration,
         profile: PressureHapticProfile = .sevenStage,
+        inputSource: any TrackpadInputSource = OMSTrackpadInputSource(manager: .shared),
+        uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         hapticTrigger: @escaping (RawHapticCommand) -> Bool
     ) {
-        manager = OMSManager.shared
+        self.inputSource = inputSource
         self.profile = profile
+        self.uptime = uptime
         self.hapticTrigger = hapticTrigger
         frameProcessor = PressureFrameProcessor(
             calibration: calibration,
@@ -161,23 +173,19 @@ public final class TrackpadPressureHaptics {
 
     deinit {
         listeningTask?.cancel()
+        inputObservation?.cancel()
+        frameBuffer?.finish()
         repeatingHapticTask?.cancel()
         if ownsListening {
-            _ = manager.stopListening()
+            inputSource.stopListening()
         }
     }
 
     @discardableResult
     public func start() -> Bool {
         if listeningTask != nil {
-            guard ownsListening && manager.isListening else {
-                listeningTask?.cancel()
-                listeningTask = nil
-                ownsListening = false
-                frameProcessor.reset()
-                if Self.activeInstance === self {
-                    Self.activeInstance = nil
-                }
+            guard ownsListening && inputSource.isListening else {
+                stop()
                 lastStartError = .listenerUnavailable
                 return false
             }
@@ -189,38 +197,60 @@ public final class TrackpadPressureHaptics {
             return false
         }
 
-        guard !manager.isListening else {
+        guard !inputSource.isListening else {
             lastStartError = .alreadyListening
             return false
         }
 
-        guard manager.startListening() else {
+        // Subscribe before opening the device so its first frame cannot be lost.
+        let buffer = TrackpadFrameBuffer()
+        let observation = inputSource.observe { touches, timestamp in
+            buffer.receive(touches, timestamp: timestamp)
+        }
+        let started = inputSource.startListening()
+        guard started && inputSource.isListening else {
+            observation.cancel()
+            buffer.finish()
+            if started { inputSource.stopListening() }
             lastStartError = .listenerUnavailable
             return false
         }
+        listeningGeneration &+= 1
+        let generation = listeningGeneration
+        inputObservation = observation
+        frameBuffer = buffer
+        lastContactTokens = [:]
         ownsListening = true
         Self.activeInstance = self
         lastStartError = nil
         frameProcessor.reset()
-        listeningTask = Task { [weak self, manager] in
-            for await touches in manager.touchDataStream {
-                guard !Task.isCancelled else {
+        listeningTask = Task { [weak self] in
+            for await frame in buffer.stream {
+                guard !Task.isCancelled,
+                      let self,
+                      self.listeningGeneration == generation else {
                     return
                 }
 
-                self?.consume(touches)
+                self.consume(frame)
             }
         }
         return true
     }
 
     public func stop() {
+        listeningGeneration &+= 1
         listeningTask?.cancel()
         listeningTask = nil
+        inputObservation?.cancel()
+        inputObservation = nil
+        frameBuffer?.finish()
+        frameBuffer = nil
+        lastContactTokens = [:]
         stopHaptic()
         frameProcessor.reset()
         if ownsListening {
-            _ = manager.stopListening()
+            inputSource.stopListening()
             ownsListening = false
         }
         if Self.activeInstance === self {
@@ -276,22 +306,43 @@ public final class TrackpadPressureHaptics {
         replaceRepeatingHapticTask(with: nil)
     }
 
-    private func consume(_ rawTouches: [OMSTouchData]) {
-        let touches = rawTouches.map(TrackpadTouchSample.init)
+    private func consume(_ frame: TrackpadInputFrame) {
+        let continuingContacts = frame.contactTokens.filter {
+            lastContactTokens[$0.key] == $0.value
+        }
+        let selectedContactEnded: Bool
+        if case let .touch(id) = selectionStrategy {
+            selectedContactEnded = lastContactTokens[id] != nil
+                && lastContactTokens[id] != frame.contactTokens[id]
+        } else {
+            selectedContactEnded = !lastContactTokens.isEmpty && continuingContacts.isEmpty
+        }
+        if selectedContactEnded { frameProcessor.resetHaptics() }
+        lastContactTokens = frame.contactTokens
+        frameProcessor.restoreTouchOrder(frame.touchOrder)
+
+        let uptime = self.uptime
         consume(
-            touches,
-            timestamp: ProcessInfo.processInfo.systemUptime
+            frame.touches,
+            timestamp: frame.timestamp,
+            isFresh: {
+                let age = uptime() - frame.timestamp
+                return age.isFinite && age >= 0 && age <= Self.maximumFrameAge
+            }
         )
     }
 
     func consume(
         _ touches: [TrackpadTouchSample],
-        timestamp: TimeInterval
+        timestamp: TimeInterval,
+        isFresh: () -> Bool = { true }
     ) {
+        let generation = listeningGeneration
         let callbackTouches = touches.filter {
             !$0.phase.isTouching || $0.pressure.isFinite
         }
         onTouchFrame?(callbackTouches)
+        guard listeningGeneration == generation else { return }
 
         let result = frameProcessor.consume(
             touches,
@@ -300,10 +351,17 @@ public final class TrackpadPressureHaptics {
             rate: rate
         )
         onPressureSample?(result.maximumPressure, result.activeTouchCount)
+        guard listeningGeneration == generation else { return }
         onSelectedPressureSample?(
             result.selectedPressure,
             result.activeTouchCount
         )
+
+        guard listeningGeneration == generation else { return }
+        guard isFresh() else {
+            frameProcessor.resetHaptics()
+            return
+        }
 
         guard isAutomaticHapticsEnabled,
               let emission = result.emission else {

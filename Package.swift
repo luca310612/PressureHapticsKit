@@ -14,12 +14,21 @@ let package = Package(
             name: "pressure-haptics-demo",
             targets: ["PressureHapticsDemo"]
         ),
+        .executable(
+            name: "pressure-haptics-raw-data",
+            targets: ["PressureHapticsRawData"]
+        ),
+        .executable(
+            name: "pressure-haptics-core-tests",
+            targets: ["PressureHapticsCoreTestRunner"]
+        ),
+        .executable(
+            name: "pressure-haptics-trackpad-tests",
+            targets: ["PressureHapticsTrackpadTestRunner"]
+        ),
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/KrishKrosh/OpenMultitouchSupport.git",
-            from: "1.0.12"
-        ),
+        .package(path: "Vendor/OpenMultitouchSupport"),
     ],
     targets: [
         .target(name: "PressureHapticsCore"),
@@ -37,8 +46,20 @@ let package = Package(
             name: "PressureHapticsDemo",
             dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
         ),
+        .executableTarget(
+            name: "PressureHapticsRawData",
+            dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
+        ),
         .testTarget(
             name: "PressureHapticsTrackpadTests",
+            dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
+        ),
+        .executableTarget(
+            name: "PressureHapticsCoreTestRunner",
+            dependencies: ["PressureHapticsCore"]
+        ),
+        .executableTarget(
+            name: "PressureHapticsTrackpadTestRunner",
             dependencies: ["PressureHapticsCore", "PressureHapticsTrackpad"]
         ),
         .testTarget(

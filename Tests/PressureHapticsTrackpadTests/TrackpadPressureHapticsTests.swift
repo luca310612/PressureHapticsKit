@@ -275,6 +275,63 @@ final class TrackpadPressureHapticsTests: XCTestCase {
         XCTAssertEqual(reportedLevels, [3, 3])
     }
 
+    func testLevelHysteresisRejectsInvalidAssignments() {
+        let recorder = HapticTriggerRecorder()
+        let haptics = makeHaptics(recorder: recorder)
+        haptics.levelHysteresis = 0.5
+
+        for invalid in [Float(-0.1), .nan, -.infinity, .infinity, 10.1, 11] {
+            haptics.levelHysteresis = invalid
+            XCTAssertEqual(haptics.levelHysteresis, 0.5)
+        }
+
+        haptics.levelHysteresis = 10
+        XCTAssertEqual(haptics.levelHysteresis, 10)
+    }
+
+    func testShutdownClearsEveryCallback() {
+        let recorder = HapticTriggerRecorder()
+        let haptics = makeHaptics(recorder: recorder)
+        haptics.onPressureSample = { _, _ in }
+        haptics.onSelectedPressureSample = { _, _ in }
+        haptics.onTouchFrame = { _ in }
+        haptics.onHapticTrigger = { _ in }
+
+        haptics.shutdown()
+
+        XCTAssertNil(haptics.onPressureSample)
+        XCTAssertNil(haptics.onSelectedPressureSample)
+        XCTAssertNil(haptics.onTouchFrame)
+        XCTAssertNil(haptics.onHapticTrigger)
+        XCTAssertFalse(haptics.isListening)
+    }
+
+    func testStopWithoutStartIsSafe() {
+        let recorder = HapticTriggerRecorder()
+        let haptics = makeHaptics(recorder: recorder)
+
+        haptics.stop()
+
+        XCTAssertFalse(haptics.isListening)
+        XCTAssertNil(haptics.lastStartError)
+    }
+
+    func testSelectedPressureReportsNilWhenNoContactTouches() {
+        let recorder = HapticTriggerRecorder()
+        let haptics = makeHaptics(recorder: recorder)
+        var selected: [Float?] = []
+        haptics.onSelectedPressureSample = { pressure, _ in selected.append(pressure) }
+
+        haptics.consume([makeTouch(id: 1, pressure: 500)], timestamp: 0)
+        haptics.consume([
+            TrackpadTouchSample(id: 1, position: .zero, pressure: 100, phase: .leaving),
+        ], timestamp: 1)
+
+        XCTAssertEqual(selected.count, 2)
+        XCTAssertNotNil(selected[0])
+        XCTAssertNil(selected[1])
+    }
+
     private func makeHaptics(
         recorder: HapticTriggerRecorder
     ) -> TrackpadPressureHaptics {

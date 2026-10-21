@@ -113,9 +113,11 @@ private let selectionTouches: [TrackpadTouchSample] = [
 ]
 
 private func makeSelectionProcessor() -> PressureFrameProcessor {
+    // These checks isolate selection strategy from hysteresis retention.
     PressureFrameProcessor(
         calibration: .init(restingPressure: 40, maximumPressure: 640),
-        profile: .sevenStage
+        profile: .sevenStage,
+        levelHysteresis: 0
     )
 }
 

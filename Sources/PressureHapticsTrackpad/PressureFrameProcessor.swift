@@ -28,27 +28,13 @@ public struct PressureFrameResult: Sendable, Hashable {
 public struct PressureFrameProcessor: Sendable {
     private var controller: PressureHapticController
     private var touchOrder: [Int32] = []
-    private var filteredPressure: Float?
-    private var lastTimestamp: TimeInterval?
 
-    /// EMA weight for each new pressure sample. Set to 1 to disable filtering.
-    public var smoothingFactor: Float {
-        didSet {
-            guard smoothingFactor.isFinite,
-                  smoothingFactor > 0,
-                  smoothingFactor <= 1 else {
-                smoothingFactor = oldValue
-                return
-            }
-            filteredPressure = nil
-        }
-    }
-
-    /// Pressure margin around each level boundary, in normalized units.
+    /// Pressure margin around each level boundary, in normalized units on
+    /// the 0–10 scale.
     public var levelHysteresis: Float {
         didSet {
             guard levelHysteresis.isFinite,
-                  (0...1).contains(levelHysteresis) else {
+                  PressureNormalization.range.contains(levelHysteresis) else {
                 levelHysteresis = oldValue
                 return
             }
@@ -56,23 +42,26 @@ public struct PressureFrameProcessor: Sendable {
         }
     }
 
+    /// Replacing the profile also clears level selection state, so the next
+    /// frame starts a fresh hysteresis band.
+    public var profile: PressureHapticProfile {
+        didSet {
+            guard oldValue != profile else { return }
+            controller.replaceProfile(profile)
+        }
+    }
+
     public init(
         calibration: PressureCalibration,
         profile: PressureHapticProfile = .sevenStage,
-        smoothingFactor: Float = 0.35,
-        levelHysteresis: Float = 0.02
+        levelHysteresis: Float = 0.2
     ) {
-        let validSmoothingFactor = smoothingFactor.isFinite
-            && smoothingFactor > 0
-            && smoothingFactor <= 1
-            ? smoothingFactor
-            : 0.35
         let validLevelHysteresis = levelHysteresis.isFinite
-            && (0...1).contains(levelHysteresis)
+            && PressureNormalization.range.contains(levelHysteresis)
             ? levelHysteresis
-            : 0.02
-        self.smoothingFactor = validSmoothingFactor
+            : 0.2
         self.levelHysteresis = validLevelHysteresis
+        self.profile = profile
         controller = PressureHapticController(
             calibration: calibration,
             profile: profile,
@@ -81,10 +70,18 @@ public struct PressureFrameProcessor: Sendable {
     }
 
     public mutating func reset() {
-        controller.reset()
+        resetHaptics()
         touchOrder.removeAll(keepingCapacity: true)
-        filteredPressure = nil
-        lastTimestamp = nil
+    }
+
+    /// Clears emission state without changing which contact was first.
+    mutating func resetHaptics() {
+        controller.reset()
+    }
+
+    /// Restores producer-side contact order after intermediate frames coalesce.
+    mutating func restoreTouchOrder(_ order: [Int32]) {
+        touchOrder = order
     }
 
     public mutating func consume(
@@ -102,27 +99,9 @@ public struct PressureFrameProcessor: Sendable {
             from: activeTouches,
             using: selectionStrategy
         )
-        if let lastTimestamp, timestamp < lastTimestamp {
-            filteredPressure = nil
-        }
-        lastTimestamp = timestamp.isFinite ? timestamp : nil
-        let pressureForController: Float?
-        if let pressure, timestamp.isFinite {
-            if let filteredPressure {
-                let factor = smoothingFactor
-                let next = pressure * factor + filteredPressure * (1 - factor)
-                self.filteredPressure = next.isFinite ? next : pressure
-            } else {
-                filteredPressure = pressure
-            }
-            pressureForController = filteredPressure
-        } else {
-            filteredPressure = nil
-            pressureForController = pressure
-        }
         let emission = controller.consume(
-            pressure: pressureForController ?? 0,
-            isTouching: pressureForController != nil,
+            pressure: pressure ?? 0,
+            isTouching: pressure != nil,
             timestamp: timestamp,
             rate: rate
         )

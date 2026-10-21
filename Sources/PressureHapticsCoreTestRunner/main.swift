@@ -32,22 +32,22 @@ private func verifyCalibration() {
 
     expectClose(calibration.normalize(0), 0)
     expectClose(calibration.normalize(100), 0)
-    expectClose(calibration.normalize(350), 0.5)
-    expectClose(calibration.normalize(600), 1)
-    expectClose(calibration.normalize(700), 1)
+    expectClose(calibration.normalize(350), 5)
+    expectClose(calibration.normalize(600), 10)
+    expectClose(calibration.normalize(700), 10)
     expectClose(calibration.normalize(.nan), 0)
 }
 
 private func verifySevenStageProfile() {
     let profile = PressureHapticProfile.sevenStage
     let samples: [(Float, Int, Int32, Float)] = [
-        (0.15, 0, 3, 0.50),
-        (0.28, 1, 3, 0.75),
-        (0.40, 2, 4, 1.00),
-        (0.52, 3, 4, 1.25),
-        (0.64, 4, 4, 1.50),
-        (0.76, 5, 6, 1.75),
-        (0.88, 6, 6, 2.00),
+        (1.5, 0, 3, 0.50),
+        (2.8, 1, 3, 0.75),
+        (4.0, 2, 4, 1.00),
+        (5.2, 3, 4, 1.25),
+        (6.4, 4, 4, 1.50),
+        (7.6, 5, 6, 1.75),
+        (8.8, 6, 6, 2.00),
     ]
 
     for (pressure, expectedIndex, expectedID, expectedParameter2) in samples {
@@ -72,9 +72,137 @@ private func verifySevenStageProfile() {
     }
 
     expect(
-        profile.selection(for: 0.149) == nil,
+        profile.selection(for: 1.49) == nil,
         "Pressure below the first boundary must not select a level"
     )
+}
+
+private func verifyConfigurableProfiles() {
+    do {
+        let linear = try PressureHapticProfile.linear(levelCount: 5)
+        let thresholds = linear.levels.map(\.lowerBound)
+        let expectedThresholds: [Float] = [1.5, 3.2, 4.9, 6.6, 8.3]
+        for (threshold, expected) in zip(thresholds, expectedThresholds) {
+            expectClose(threshold, expected)
+        }
+        expectClose(
+            linear.levels.map(\.command.rawParameter2).first ?? 0,
+            0.5
+        )
+        expectClose(
+            linear.levels.map(\.command.rawParameter2).last ?? 0,
+            2.0
+        )
+        expect(
+            linear.levels.map(\.command.actuationID) == [3, 3, 4, 4, 6],
+            "Intensities must map onto built-in actuation strengths"
+        )
+
+        let single = try PressureHapticProfile.linear(levelCount: 1)
+        expect(single.levels.count == 1, "Expected a single level")
+        expectClose(single.levels[0].lowerBound, 1.5)
+        expectClose(single.levels[0].command.rawParameter2, 2.0)
+
+        let configured = try PressureHapticProfile.linear(
+            levelCount: 3,
+            intensityRange: 0.5...1.0,
+            actuationIDs: [3, 4, 6]
+        )
+        expect(
+            configured.levels.map(\.command.actuationID) == [3, 4, 6],
+            "Explicit actuation IDs must be applied verbatim"
+        )
+        expectClose(
+            configured.levels[2].command.rawParameter2,
+            1.0
+        )
+
+        let borders = try PressureHapticProfile.custom(
+            thresholds: [2, 5],
+            intensities: [0.75, 1.5]
+        )
+        expect(
+            borders.selection(for: 1.9) == nil
+                && borders.selection(for: 2)?.index == 0
+                && borders.selection(for: 5)?.index == 1,
+            "Custom thresholds must follow the 0–10 scale"
+        )
+
+        do {
+            _ = try PressureHapticProfile.linear(levelCount: 0)
+            fatalError("Expected a non-positive level count to be rejected")
+        } catch let error as PressureHapticProfileError {
+            expect(
+                error == .invalidLevelCount(0),
+                "Unexpected level count error"
+            )
+        }
+
+        do {
+            _ = try PressureHapticProfile.linear(
+                levelCount: 5,
+                firstThreshold: 11
+            )
+            fatalError("Expected an out-of-range first threshold to be rejected")
+        } catch let error as PressureHapticProfileError {
+            expect(
+                error == .invalidLowerBound(index: 0),
+                "Unexpected first threshold error"
+            )
+        }
+
+        do {
+            _ = try PressureHapticProfile.linear(
+                levelCount: 2,
+                firstThreshold: PressureNormalization.maximum
+            )
+            fatalError(
+                "Expected a first threshold at full pressure to be rejected"
+            )
+        } catch let error as PressureHapticProfileError {
+            expect(
+                error == .firstThresholdMustBeBelowMaximum,
+                "Unexpected first threshold at maximum error"
+            )
+        }
+
+        let singleAtMaximum = try PressureHapticProfile.linear(
+            levelCount: 1,
+            firstThreshold: PressureNormalization.maximum
+        )
+        expectClose(
+            singleAtMaximum.levels[0].lowerBound,
+            PressureNormalization.maximum
+        )
+
+        do {
+            _ = try PressureHapticProfile.custom(
+                thresholds: [2, 5],
+                intensities: [0.75, 0.5]
+            )
+            fatalError("Expected descending intensities to be rejected")
+        } catch let error as PressureHapticProfileError {
+            expect(
+                error == .intensitiesMustBeAscending,
+                "Unexpected intensity ordering error"
+            )
+        }
+
+        do {
+            _ = try PressureHapticProfile.custom(
+                thresholds: [2, 5],
+                intensities: [0.75]
+            )
+            fatalError("Expected mismatched arrays to be rejected")
+        } catch let error as PressureHapticProfileError {
+            expect(
+                error == .mismatchedLevelArrays,
+                "Unexpected array mismatch error"
+            )
+        }
+    } catch {
+        fatalError("Unexpected profile construction failure: \(error)")
+    }
 }
 
 private func verifyProfileValidation() {
@@ -139,7 +267,7 @@ private func verifyRateLimit() {
         ),
         "Expected initial emission"
     )
-    expectClose(first.normalizedPressure, 0.5)
+    expectClose(first.normalizedPressure, 5)
     expectClose(first.intensity, 1.55)
     expect(first.levelIndex == 2, "Expected the third pressure level")
     expect(
@@ -198,7 +326,7 @@ private func verifyImmediateLevelChange() {
         "Expected initial level"
     )
     let second = unwrap(
-        controller.consume(pressure: 240, isTouching: true, timestamp: 0.01),
+        controller.consume(pressure: 250, isTouching: true, timestamp: 0.01),
         "Expected immediate emission after a level change"
     )
     expect(first.levelIndex == 0, "Expected first pressure level")
@@ -235,6 +363,7 @@ private func verifyReleaseReset() {
 
 verifyCalibration()
 verifySevenStageProfile()
+verifyConfigurableProfiles()
 verifyProfileValidation()
 verifyRateLimit()
 verifyZeroRateOnlyEmitsOnLevelChange()

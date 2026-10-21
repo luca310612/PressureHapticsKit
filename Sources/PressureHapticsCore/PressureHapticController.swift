@@ -21,13 +21,14 @@ public struct HapticEmission: Sendable, Hashable {
 
 public struct PressureHapticController: Sendable {
     private let calibration: PressureCalibration
-    private let profile: PressureHapticProfile
     private var lastEmissionTime: TimeInterval?
     private var lastLevelIndex: Int?
+    /// Replaces via `replaceProfile(_:)` so stale level state clears too.
+    public private(set) var profile: PressureHapticProfile
     public var levelHysteresis: Float {
         didSet {
             guard levelHysteresis.isFinite,
-                  (0...1).contains(levelHysteresis) else {
+                  PressureNormalization.range.contains(levelHysteresis) else {
                 levelHysteresis = oldValue
                 return
             }
@@ -37,13 +38,23 @@ public struct PressureHapticController: Sendable {
     public init(
         calibration: PressureCalibration,
         profile: PressureHapticProfile = .sevenStage,
-        levelHysteresis: Float = 0.02
+        levelHysteresis: Float = 0.2
     ) {
         self.calibration = calibration
         self.profile = profile
-        self.levelHysteresis = levelHysteresis.isFinite && (0...1).contains(levelHysteresis)
+        self.levelHysteresis = levelHysteresis.isFinite
+            && PressureNormalization.range.contains(levelHysteresis)
             ? levelHysteresis
-            : 0.02
+            : 0.2
+    }
+
+    /// Replaces the profile and clears emission state, so the next selected
+    /// level starts from a fresh hysteresis band.
+    public mutating func replaceProfile(
+        _ newProfile: PressureHapticProfile
+    ) {
+        profile = newProfile
+        resetEmissionState()
     }
 
     public mutating func reset() {
@@ -56,7 +67,11 @@ public struct PressureHapticController: Sendable {
         timestamp: TimeInterval,
         rate: Double = 0
     ) -> HapticEmission? {
-        guard timestamp.isFinite else {
+        guard timestamp.isFinite,
+              pressure.isFinite,
+              calibration.restingPressure.isFinite,
+              calibration.maximumPressure.isFinite,
+              calibration.maximumPressure > calibration.restingPressure else {
             resetEmissionState()
             return nil
         }
@@ -64,6 +79,11 @@ public struct PressureHapticController: Sendable {
         guard isTouching else {
             resetEmissionState()
             return nil
+        }
+
+        // A restarted clock starts a new selection, including its hysteresis.
+        if let lastEmissionTime, timestamp < lastEmissionTime {
+            resetEmissionState()
         }
 
         let normalizedPressure = calibration.normalize(pressure)
@@ -74,10 +94,6 @@ public struct PressureHapticController: Sendable {
         ) else {
             resetEmissionState()
             return nil
-        }
-
-        if let lastEmissionTime, timestamp < lastEmissionTime {
-            resetEmissionState()
         }
 
         let changedLevel = lastLevelIndex != selection.index
@@ -95,7 +111,7 @@ public struct PressureHapticController: Sendable {
 
         return HapticEmission(
             normalizedPressure: normalizedPressure,
-            intensity: 0.1 + normalizedPressure * 2.9,
+            intensity: 0.1 + normalizedPressure * 0.29,
             levelIndex: selection.index,
             command: selection.level.command
         )
